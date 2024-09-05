@@ -45,6 +45,14 @@ export class Deck {
     return this.cards.shift();
   }
 
+  push(card: Card): void {
+    this.cards.unshift(card)
+  }
+
+  top(): Card {
+    return this.cards[0]
+  }
+
   get size(): number {
     return this.cards.length;
   }
