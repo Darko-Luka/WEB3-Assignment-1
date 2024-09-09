@@ -17,3 +17,6 @@ export function standardShuffler<T>(cards: T[]) {
   }
 }
 
+export function swapObjects<T>(objA: T, objB: T): [T, T] {
+    return [objB, objA];
+}

@@ -19,9 +19,11 @@ export interface Card {
 
 export class Deck {
   private cards: Card[];
+  private onDeckEmpty?: () => void
 
-  constructor(cards: Card[]) {
+  constructor(cards: Card[], onDeckEmpty?: ()=> void) {
     this.cards = cards;
+    this.onDeckEmpty = onDeckEmpty
   }
 
   // Shuffles the cards array
@@ -41,8 +43,11 @@ export class Deck {
   }
 
   // Removes the first card from the cards array
-  deal(): Card | undefined {
-    return this.cards.shift();
+  deal(): Card | undefined  {
+    const dealCard = this.cards.shift();
+    if(this.cards.length === 0)
+      this.onDeckEmpty?.()
+    return dealCard
   }
 
   push(card: Card): void {
@@ -70,7 +75,7 @@ export class Deck {
 }
 
 // Create's the full deck of 108 cards
-export function createInitialDeck(): Deck {
+export function createInitialDeck(onDeckEmpty?: ()=> void): Deck {
   const deck: Card[] = [];
 
   // Color cards
@@ -96,5 +101,5 @@ export function createInitialDeck(): Deck {
     deck.push({ type: "WILD DRAW", color: undefined, number: undefined });
   }
 
-  return new Deck(deck);
+  return new Deck(deck, onDeckEmpty);
 }

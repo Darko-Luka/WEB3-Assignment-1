@@ -1,4 +1,4 @@
-import { Shuffler, standardShuffler } from "../utils/random_utils";
+import { Shuffler, standardShuffler, swapObjects } from "../utils/random_utils";
 import * as deck from "../../src/model/deck";
 
 export class Hand {
@@ -6,7 +6,7 @@ export class Hand {
   private playerHands: deck.Card[][];
   public dealer: number;
   private shuffler?: Shuffler<deck.Card>;
-  private cardsPerPlayer?: number; // TODO: 
+  private cardsPerPlayer?: number;
   private _drawPile: deck.Deck;
   private _discardPile: deck.Deck;
   private _playerInTurn: number;
@@ -27,7 +27,7 @@ export class Hand {
     this.dealer = dealer;
     this.cardsPerPlayer = cardsPerPlayer;
 
-    this._drawPile = deck.createInitialDeck();
+    this._drawPile = deck.createInitialDeck(() => this.onEmptyDrawDeck());
     this._discardPile = new deck.Deck([]);
 
     this.shuffler = shuffler;
@@ -66,23 +66,36 @@ export class Hand {
     return this._playerInTurn;
   }
 
-  play(cardIndex: number, nextColor?: deck.CardColor) {
+  play(cardIndex: number, nextColor?: deck.CardColor): deck.Card {
     if (!this.canPlay(cardIndex)) throw new Error("Can not play the card"); // Checks if the move is legal
 
     this.selectedColor = undefined;
 
     const cardToPlay = this.playerHand(this._playerInTurn)[cardIndex];
+
+    // Check if the cardToPlay is not a Wild or Wild Draw card and check if the nextColor is provided
+    if (
+      !(cardToPlay.type === "WILD" || cardToPlay.type === "WILD DRAW") &&
+      nextColor
+    )
+      throw Error("Cannot name a color on a colored card");
+
     if (cardToPlay.type === "WILD" || cardToPlay.type === "WILD DRAW") {
+      if (!nextColor)
+        throw Error("Next color is undefined but a wild card was played");
       this.selectedColor = nextColor; // Set the selected color for Wild and Wild Draw 4 cards
     }
 
     this._discardPile.push(cardToPlay); // Adds the played cared to the discard pile
     this.playerHand(this._playerInTurn).splice(cardIndex, 1); // Removes the played card from the players deck
+    this.handleLogicForSpecialCards(cardToPlay);
     this.nextPlayer();
+    return cardToPlay;
   }
 
   canPlay(cardIndex: number): boolean {
-    if ( // Checks if the cardIndex is in bounds, otherwise return false
+    if (
+      // Checks if the cardIndex is in bounds, otherwise return false
       cardIndex < 0 ||
       cardIndex >= this.playerHand(this._playerInTurn).length
     )
@@ -93,7 +106,7 @@ export class Hand {
 
     if (this.selectedColor !== undefined) {
       topDiscardCard.color = this.selectedColor; // Override the top discard card color if a previous played has played a wild card and changed the color
-      topDiscardCard.number = undefined
+      topDiscardCard.number = undefined;
     }
 
     if (cardToPlay.type === "WILD DRAW") {
@@ -144,6 +157,27 @@ export class Hand {
     return false;
   }
 
+  canPlayAny(): boolean {
+    for (
+      let index = 0;
+      index < this.playerHand(this._playerInTurn).length;
+      index++
+    ) {
+      if (this.canPlay(index)) return true;
+    }
+    return false;
+  }
+
+  draw() {
+    const card = this._drawPile.deal();
+    if (!card) return;
+
+    this.playerHand(this._playerInTurn).push(card);
+
+    // Move to a next player if there is no playable cards
+    if (!this.canPlayAny()) this.nextPlayer();
+  }
+
   get playerCount(): number {
     return this.players.length;
   }
@@ -152,7 +186,7 @@ export class Hand {
     // Deal 7 cards to each player
     for (let i = 0; i < this.playerHands.length; i++) {
       this.nextPlayer();
-      for (let j = 0; j < 7; j++) {
+      for (let j = 0; j < (this?.cardsPerPlayer ?? 7); j++) {
         const card = this._drawPile.deal();
         if (card) this.playerHand(this._playerInTurn).push(card);
       }
@@ -174,24 +208,7 @@ export class Hand {
     this._discardPile.push(card);
 
     // Special case handling for the first discard
-    switch (card.type) {
-      case "REVERSE":
-        this.isReverse = true;
-        break;
-      case "SKIP":
-        this.nextPlayer(); // skip the next player
-        break;
-      case "DRAW":
-        const nextPlayer = this.playerHands[
-          (this._playerInTurn + 1 + this.players.length) % this.players.length
-        ];
-        let test = this._drawPile.deal();
-        if (test) nextPlayer.push(test);
-        test = this._drawPile.deal();
-        if (test) nextPlayer.push(test);
-        this.nextPlayer(); // the player who draws also skips their turn
-        break;
-    }
+    this.handleLogicForSpecialCards(card);
   }
 
   private nextPlayer() {
@@ -205,6 +222,43 @@ export class Hand {
   private shuffle() {
     if (this.shuffler) this._drawPile.shuffle(this.shuffler);
     else this._drawPile.shuffle(standardShuffler);
+  }
+
+  private handleLogicForSpecialCards(card: deck.Card) {
+    switch (card.type) {
+      case "REVERSE":
+        // If there is two players, reverse card acts like a skip card.
+        if (this.playerCount === 2) this.nextPlayer();
+
+        this.isReverse = !this.isReverse;
+        break;
+      case "SKIP":
+        this.nextPlayer(); // skip the next player
+        break;
+      case "DRAW":
+      case "WILD DRAW":
+        const nextPlayer = this.playerHands[
+          (this._playerInTurn + 1 + this.players.length) % this.players.length
+        ];
+        // Deal ether 2 or 4 cards depending is it a normal Draw or Wild Draw
+        for (let index = 0; index < (card.type === "DRAW" ? 2 : 4); index++) {
+          let drawnCard = this._drawPile.deal();
+          if (drawnCard) nextPlayer.push(drawnCard);
+        }
+        this.nextPlayer(); // the player who draws also skips their turn
+        break;
+    }
+  }
+
+  private onEmptyDrawDeck() {
+    const topDiscardCard = this._discardPile.deal(); // Save the top card from the discard pile
+    // Switch the discard and draw piles
+    [this._drawPile, this._discardPile] = swapObjects(
+      this._drawPile,
+      this._discardPile
+    );
+    if (topDiscardCard) this._discardPile.push(topDiscardCard); // Put back the top card to the discard pile
+    this.shuffle(); // Reshuffle the draw pile
   }
 }
 
