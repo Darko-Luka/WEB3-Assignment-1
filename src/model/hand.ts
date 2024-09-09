@@ -1,9 +1,18 @@
 import { Shuffler, standardShuffler, swapObjects } from "../utils/random_utils";
 import * as deck from "../../src/model/deck";
 
+type UnoFailure = {
+  accuser: number;
+  accused: number;
+};
+
+type EndCallback = (event: { winner: number }) => void;
+
+
 export class Hand {
   private players: string[];
   private playerHands: deck.Card[][];
+  private playerUnos: boolean[];
   public dealer: number;
   private shuffler?: Shuffler<deck.Card>;
   private cardsPerPlayer?: number;
@@ -12,6 +21,8 @@ export class Hand {
   private _playerInTurn: number;
   private isReverse: boolean;
   private selectedColor?: deck.CardColor;
+  private _score?: number;
+  private endCallbacks: EndCallback[] = [];
 
   constructor(
     players: string[],
@@ -23,6 +34,7 @@ export class Hand {
     if (players.length > 10) throw new Error("To many players");
     this.players = players;
     this.playerHands = Array.from({ length: players.length }, () => []);
+    this.playerUnos = Array.from({ length: players.length }, () => false);
 
     this.dealer = dealer;
     this.cardsPerPlayer = cardsPerPlayer;
@@ -62,7 +74,9 @@ export class Hand {
     return this._drawPile;
   }
 
-  playerInTurn(): number {
+  playerInTurn(): number | undefined {
+    if (this.hasEnded()) return undefined;
+
     return this._playerInTurn;
   }
 
@@ -90,10 +104,13 @@ export class Hand {
     this.playerHand(this._playerInTurn).splice(cardIndex, 1); // Removes the played card from the players deck
     this.handleLogicForSpecialCards(cardToPlay);
     this.nextPlayer();
+    this.hasEnded() // Check if the game has ended
     return cardToPlay;
   }
 
   canPlay(cardIndex: number): boolean {
+    if (this.hasEnded()) return false;
+
     if (
       // Checks if the cardIndex is in bounds, otherwise return false
       cardIndex < 0 ||
@@ -169,14 +186,79 @@ export class Hand {
   }
 
   draw() {
+    if (this.hasEnded()) throw Error("Cannot draw, the round has ended");
+
     const card = this._drawPile.deal();
     if (!card) return;
 
     this.playerHand(this._playerInTurn).push(card);
+    this.playerUnos[this._playerInTurn] = false;
 
     // Move to a next player if there is no playable cards
     if (!this.canPlayAny()) this.nextPlayer();
   }
+
+  sayUno(playerIndex: number) {
+    if (this.hasEnded()) throw Error("Cannot say UNO, the round has ended");
+
+    if (playerIndex < 0) throw new Error("Player hand index out of bounds");
+    if (playerIndex >= this.playerHands.length)
+      throw new Error("Player hand index out of bounds");
+
+    if (
+      this._playerInTurn === playerIndex ||
+      this._playerInTurn === this.nextPlayerIndex(playerIndex)
+    )
+      this.playerUnos[playerIndex] = true;
+  }
+
+  catchUnoFailure(unoFailure: UnoFailure): boolean {
+    const accusedPlayer = this.playerHands[unoFailure.accused];
+    if (
+      accusedPlayer.length === 1 &&
+      !this.playerUnos[unoFailure.accused] &&
+      (this._playerInTurn === unoFailure.accused ||
+        this._playerInTurn === this.nextPlayerIndex(unoFailure.accused))
+    ) {
+      for (let index = 0; index < 4; index++) {
+        let drawnCard = this._drawPile.deal();
+        if (drawnCard) accusedPlayer.push(drawnCard);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  score(): number | undefined {
+    return this._score;
+  }
+
+  hasEnded(): boolean {
+    for (let index = 0; index < this.playerHands.length; index++) {
+      if (this.playerHand(index).length === 0) {
+        this.calculateScore();
+        const winner = this.winner()
+        if(winner)
+          this.endCallbacks.forEach(callback => callback({winner}));
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  winner(): number | undefined {
+    for (let index = 0; index < this.playerHands.length; index++) {
+      if (this.playerHand(index).length === 0) return index;
+    }
+
+    return undefined;
+  }
+
+ public onEnd(callback: EndCallback): void {
+        this.endCallbacks.push(callback);
+    } 
 
   get playerCount(): number {
     return this.players.length;
@@ -211,12 +293,35 @@ export class Hand {
     this.handleLogicForSpecialCards(card);
   }
 
-  private nextPlayer() {
-    const range = this.players.length;
+  private calculateScore() {
+    if(this._score !== undefined) // Do not calculate the score if the score has been calculated already! 
+      return
 
+    this._score = 0;
+
+    for (let i = 0; i < this.playerHands.length; i++) {
+      const hand = this.playerHand(i);
+      for (let j = 0; j < hand.length; j++) {
+        const card = hand[j];
+        if (card.type === "NUMBERED" && card.number) this._score += card.number;
+        if (card.type === "DRAW") this._score += 20
+        if (card.type === "REVERSE") this._score += 20
+        if (card.type === "SKIP") this._score += 20
+        if (card.type === "WILD") this._score += 50
+        if (card.type === "WILD DRAW") this._score += 50
+      }
+    }
+  }
+
+  private nextPlayer() {
+    this._playerInTurn = this.nextPlayerIndex();
+  }
+
+  private nextPlayerIndex(playerIndex?: number): number {
+    const range = this.players.length;
     if (this.isReverse)
-      this._playerInTurn = (this._playerInTurn - 1 + range) % range;
-    else this._playerInTurn = (this._playerInTurn + 1 + range) % range;
+      return ((playerIndex ?? this._playerInTurn) - 1 + range) % range;
+    else return ((playerIndex ?? this._playerInTurn) + 1 + range) % range;
   }
 
   private shuffle() {
@@ -237,9 +342,7 @@ export class Hand {
         break;
       case "DRAW":
       case "WILD DRAW":
-        const nextPlayer = this.playerHands[
-          (this._playerInTurn + 1 + this.players.length) % this.players.length
-        ];
+        const nextPlayer = this.playerHands[this.nextPlayerIndex()];
         // Deal ether 2 or 4 cards depending is it a normal Draw or Wild Draw
         for (let index = 0; index < (card.type === "DRAW" ? 2 : 4); index++) {
           let drawnCard = this._drawPile.deal();
