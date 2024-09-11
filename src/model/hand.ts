@@ -8,7 +8,6 @@ type UnoFailure = {
 
 type EndCallback = (event: { winner: number }) => void;
 
-
 export class Hand {
   private players: string[];
   private playerHands: deck.Card[][];
@@ -22,7 +21,7 @@ export class Hand {
   private isReverse: boolean;
   private selectedColor?: deck.CardColor;
   private _score?: number;
-  private endCallbacks: EndCallback[] = [];
+  public endCallbacks: EndCallback[] = [];
 
   constructor(
     players: string[],
@@ -52,7 +51,7 @@ export class Hand {
     this.nextPlayer();
   }
 
-  player(index: number) {
+  player(index: number): string {
     if (index < 0) throw new Error("Player index out of bounds");
     if (index >= this.players.length)
       throw new Error("Player index out of bounds");
@@ -104,7 +103,7 @@ export class Hand {
     this.playerHand(this._playerInTurn).splice(cardIndex, 1); // Removes the played card from the players deck
     this.handleLogicForSpecialCards(cardToPlay);
     this.nextPlayer();
-    this.hasEnded() // Check if the game has ended
+    this.hasEnded(); // Check if the game has ended
     return cardToPlay;
   }
 
@@ -238,9 +237,9 @@ export class Hand {
     for (let index = 0; index < this.playerHands.length; index++) {
       if (this.playerHand(index).length === 0) {
         this.calculateScore();
-        const winner = this.winner()
-        if(winner)
-          this.endCallbacks.forEach(callback => callback({winner}));
+        const winner = this.winner();
+        if (winner !== undefined)
+          this.endCallbacks.forEach((callback) => callback({ winner }));
         return true;
       }
     }
@@ -256,9 +255,9 @@ export class Hand {
     return undefined;
   }
 
- public onEnd(callback: EndCallback): void {
-        this.endCallbacks.push(callback);
-    } 
+  public onEnd(callback: EndCallback): void {
+    this.endCallbacks.push(callback);
+  }
 
   get playerCount(): number {
     return this.players.length;
@@ -294,8 +293,9 @@ export class Hand {
   }
 
   private calculateScore() {
-    if(this._score !== undefined) // Do not calculate the score if the score has been calculated already! 
-      return
+    if (this._score !== undefined)
+      // Do not calculate the score if the score has been calculated already!
+      return;
 
     this._score = 0;
 
@@ -304,11 +304,11 @@ export class Hand {
       for (let j = 0; j < hand.length; j++) {
         const card = hand[j];
         if (card.type === "NUMBERED" && card.number) this._score += card.number;
-        if (card.type === "DRAW") this._score += 20
-        if (card.type === "REVERSE") this._score += 20
-        if (card.type === "SKIP") this._score += 20
-        if (card.type === "WILD") this._score += 50
-        if (card.type === "WILD DRAW") this._score += 50
+        if (card.type === "DRAW") this._score += 20;
+        if (card.type === "REVERSE") this._score += 20;
+        if (card.type === "SKIP") this._score += 20;
+        if (card.type === "WILD") this._score += 50;
+        if (card.type === "WILD DRAW") this._score += 50;
       }
     }
   }

@@ -54,7 +54,7 @@ describe("Game set up", () => {
     expect(game.currentHand()).toBe(hand)
   })
   it("selects a random player as dealer", () => {
-    const game: Game = createGame({players: ['a', 'b', 'c', 'd'], targetScore: 500, randomizer: () => 1})
+    const game: Game = createGame({players: ['a', 'b', 'c', 'd'], targetScore: 500, randomize: () => 1})
     expect(game.currentHand()?.dealer).toBe(1)
   })
 })
@@ -72,7 +72,7 @@ describe("Playing a hand", () => {
   const props = {
     players: ['a', 'b', 'c', 'd'],
     targetScore: 200,
-    randomizer: () => 3,
+    randomize: () => 3,
     shuffler: firstShuffle,
     cardsPerPlayer: 1
   }
@@ -130,7 +130,7 @@ describe("ending the second hand", () => {
   const props = {
     players: ['a', 'b', 'c', 'd'],
     targetScore: 200,
-    randomizer: () => 3,
+    randomize: () => 3,
     shuffler: successiveShufflers(firstShuffle, secondShuffle),
     cardsPerPlayer: 1
   }
@@ -175,7 +175,7 @@ describe("ending the second hand", () => {
   const props = {
     players: ['a', 'b', 'c', 'd'],
     targetScore: 200,
-    randomizer: () => 3,
+    randomize: () => 3,
     shuffler: successiveShufflers(firstShuffle, secondShuffle, thirdShuffle),
     cardsPerPlayer: 1
   }
